@@ -1,13 +1,14 @@
 voice timbre + volume = harmonics countour
 Base: "impulse train" in the freq domain. Strict harmos, mag = 1. 
 
-"with a periodic signal for voiced sounds and white noise for unvoiced sounds. "
-    - Ning Hu
-    YinYin! Take out the harmonics. Use the rest to synth the envloped noise. 
+linear interp on log or not? 
+    can't hear a difference. Using no-log
 
 Try: 
     don't implement vibrato
     Sing with vibrato
     see what you get
 
-linear interp on log or not? 
+"with a periodic signal for voiced sounds and white noise for unvoiced sounds. "
+    - Ning Hu
+    YinYin! Take out the harmonics. Use the rest to synth the envloped noise. 
