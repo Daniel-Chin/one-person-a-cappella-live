@@ -21,7 +21,7 @@ except ImportError as e:
 print('Preparing...')
 PAGE_LEN = 512
 N_HARMONICS = 30
-MAX_NOTES = 2
+MAX_NOTES = 4
 DO_SWIPE = True
 DO_PROFILE = True
 # WRITE_FILE = None
@@ -65,7 +65,6 @@ def main():
     hSynth = HarmonicSynth(
         N_HARMONICS * MAX_NOTES, SR, PAGE_LEN, DTYPE_BUF[0], 
         STUPID_MATCH = True, DO_SWIPE = DO_SWIPE, 
-        CROSSFADE_RATIO = .3, 
     )
     pa = pyaudio.PyAudio()
     streamOutContainer.append(pa.open(
@@ -144,7 +143,7 @@ def onAudioIn(in_data, sample_count, *_):
 
         profiler.gonna('MIDI')
         ...
-        freqs = [220, 440]
+        freqs = [np.exp(- 2.5 + 1.5 * np.log(yin(page, SR, PAGE_LEN)))]
 
         profiler.gonna('interp')
         for i, f0 in enumerate(freqs):
