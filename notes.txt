@@ -9,6 +9,24 @@ Try:
     Sing with vibrato
     see what you get
 
+implement vibrato?
+    no?
+
+hybrid synth
+    low freq: harmoSynth
+    high freq: ifftSynth
+    
+    to test:
+        the output multiplier. Synth the same pitch with ifft and harmo: are they at the same level? 
+
+TODO
+
 "with a periodic signal for voiced sounds and white noise for unvoiced sounds. "
     - Ning Hu
     YinYin! Take out the harmonics. Use the rest to synth the envloped noise. 
+    test this in jupyter notebook with a pre-recorded "mouthhh fffrequencccccy"
+
+Spectral leakage: just sum the neiboring freq bins? 
+    no. Sum is smaller when the freq is in the mid of a bin
+    Sum of squares: look likes it! 
+    So let's dump SFT
