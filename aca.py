@@ -6,11 +6,13 @@ import scipy
 from scipy.interpolate import interp1d
 from threading import Lock
 import wave
+import mido
 try:
     from interactive import listen
     from yin import yin
     from streamProfiler import StreamProfiler
-    from harmonicSynth import HarmonicSynth, Harmonic
+    from hybridSynth import HybridSynth, Harmonic
+    from selectAudioDevice import selectAudioDevice
 except ImportError as e:
     module_name = str(e).split('No module named ', 1)[1].strip().strip('"\'')
     print(f'Missing module {module_name}. Please download at')
@@ -19,9 +21,10 @@ except ImportError as e:
     raise e
 
 print('Preparing...')
+DEBUG_NO_MIDI = True
 PAGE_LEN = 512
-N_HARMONICS = 30
-MAX_NOTES = 4
+N_HARMONICS = 60
+HYBRID_QUALITY = 12
 DO_SWIPE = True
 DO_PROFILE = True
 # WRITE_FILE = None
@@ -41,13 +44,16 @@ LADDER = np.arange(1, N_HARMONICS + 1)
 FMAX = 1600
 INT32RANGE = 2**31
 INV_INT32RANGE = 1 / 2**31
+NOTE_ON = 'note_on'
+NOTE_OFF = 'note_off'
 
 streamOutContainer = []
 terminate_flag = 0
 terminateLock = Lock()
 profiler = StreamProfiler(PAGE_LEN / SR, DO_PROFILE)
-hSynth = None
-harmonics = [Harmonic(220, 0)] * (N_HARMONICS * MAX_NOTES)
+notes = []
+notesLock = Lock()
+hySynth = None
 
 if DO_PROFILE:
     _print = print
@@ -60,16 +66,18 @@ def sft(signal, freq_bin):
     return np.abs(np.sum(signal * np.exp(IMAGINARY_LADDER * freq_bin))) / PAGE_LEN
 
 def main():
-    global terminate_flag, f, hSynth
+    global terminate_flag, f, hySynth
     terminateLock.acquire()
-    hSynth = HarmonicSynth(
-        N_HARMONICS * MAX_NOTES, SR, PAGE_LEN, DTYPE_BUF[0], 
-        STUPID_MATCH = True, DO_SWIPE = DO_SWIPE, 
+    hySynth = HybridSynth(
+        HYBRID_QUALITY, SR, PAGE_LEN, DTYPE_BUF[0], 
     )
     pa = pyaudio.PyAudio()
+    # in_i, out_i = selectAudioDevice(pa)
+    in_i, out_i = None, None
     streamOutContainer.append(pa.open(
         format = DTYPE_IO[1], channels = 1, rate = SR, 
         output = True, frames_per_buffer = PAGE_LEN,
+        output_device_index = out_i, 
     ))
     if WRITE_FILE is not None:
         f = wave.open(WRITE_FILE, 'wb')
@@ -79,16 +87,18 @@ def main():
     streamIn = pa.open(
         format = DTYPE_IO[1], channels = 1, rate = SR, 
         input = True, frames_per_buffer = PAGE_LEN,
+        input_device_index = in_i, 
         stream_callback = onAudioIn, 
     )
     streamIn.start_stream()
     print('Press ESC to quit. ')
     try:
-        while streamIn.is_active():
-            op = listen(b'\x1b', priorize_esc_or_arrow=True)
-            if op == b'\x1b':
-                print('Esc received. Shutting down. ')
-                break
+        # with mido.open_input(callback = onMidiIn):
+            while streamIn.is_active():
+                op = listen(b'\x1b', priorize_esc_or_arrow=True)
+                if op == b'\x1b':
+                    print('Esc received. Shutting down. ')
+                    break
     except KeyboardInterrupt:
         print('Ctrl+C received. Shutting down. ')
     finally:
@@ -141,36 +151,40 @@ def onAudioIn(in_data, sample_count, *_):
         profiler.gonna('getE')
         envelope = getEnvelope(page, PAGE_LEN)
 
-        profiler.gonna('MIDI')
-        ...
-        freqs = [np.exp(- 2.5 + 1.5 * np.log(yin(page, SR, PAGE_LEN)))]
+        profiler.gonna('crit_sec')
+        with notesLock:
+            if DEBUG_NO_MIDI:
+                # notes = [48, 52, 55]
+                notes = [55]
+            freqs = [pitch2freq(n) for n in notes]
 
         profiler.gonna('interp')
-        for i, f0 in enumerate(freqs):
-            harmonics[
-                i * N_HARMONICS : (i+1) * N_HARMONICS
-            ] = [
-                # Harmonic(f, envelope(f)) if f < NYQUIST - FMAX else Harmonic(f, 0)
-                Harmonic(f, envelope(f))
-                for f in LADDER * f0
-            ]
-        for i in range(
-            (i + 1) * N_HARMONICS, MAX_NOTES * N_HARMONICS
-        ):  # same `i`. Cool shit
-            harmonics[i] = Harmonic(harmonics[i].freq, 0) 
+        if freqs:
+            harmonics = []
+            for f0 in freqs:
+                for fn in LADDER * f0:
+                    if fn >= NYQUIST:
+                        break
+                    harmonics.append(
+                        Harmonic(fn, envelope(fn))
+                    )
 
         profiler.gonna('eat')
-        hSynth.eat(harmonics)
+        hySynth.eat(harmonics)
 
         profiler.gonna('mix')
+        if freqs:
+            mixed = hySynth.mix()
+        else:
+            mixed = page
         mixed = np.round(
-            hSynth.mix() * INT32RANGE * MASTER_VOLUME
+            mixed * INT32RANGE * MASTER_VOLUME
         ).astype(DTYPE_IO[0])
         streamOutContainer[0].write(mixed, PAGE_LEN)
         if WRITE_FILE is not None:
             f.writeframes(mixed)
 
-        profiler.display(same_line=True)
+        profiler.display(same_line=False)
         profiler.gonna('idle')
         return (None, pyaudio.paContinue)
     except:
@@ -178,5 +192,16 @@ def onAudioIn(in_data, sample_count, *_):
         import traceback
         traceback.print_exc()
         return (None, pyaudio.paAbort)
+
+def pitch2freq(pitch):
+    return np.exp((pitch + 36.37631656229591) * 0.0577622650466621)
+
+def onMidiIn(msg):
+    with notesLock:
+        if msg.type == NOTE_ON:
+            assert msg.note not in notes
+            notes.append(msg.note)
+        elif msg.type == NOTE_OFF:
+            notes.remove(msg.note)
 
 main()
