@@ -30,3 +30,7 @@ Spectral leakage: just sum the neiboring freq bins?
     no. Sum is smaller when the freq is in the mid of a bin
     Sum of squares: look likes it! 
     So let's dump SFT
+
+Why does the sound sound loose when in triad? 
+    test adding sounds together in Jupyter. 
+    maybe related to irrational harmonics not interfering? 

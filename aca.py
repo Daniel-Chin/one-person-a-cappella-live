@@ -21,11 +21,10 @@ except ImportError as e:
     raise e
 
 print('Preparing...')
-DEBUG_NO_MIDI = True
+DEBUG_NO_MIDI = False
 PAGE_LEN = 512
-N_HARMONICS = 60
+N_HARMONICS = 50    # NYQUIST / 200
 HYBRID_QUALITY = 12
-DO_SWIPE = True
 DO_PROFILE = True
 # WRITE_FILE = None
 WRITE_FILE = f'demo_{time()}.wav'
@@ -92,18 +91,21 @@ def main():
     )
     streamIn.start_stream()
     print('Press ESC to quit. ')
+    if not DEBUG_NO_MIDI:
+        midiPort = mido.open_input(callback = onMidiIn)
     try:
-        # with mido.open_input(callback = onMidiIn):
-            while streamIn.is_active():
-                op = listen(b'\x1b', priorize_esc_or_arrow=True)
-                if op == b'\x1b':
-                    print('Esc received. Shutting down. ')
-                    break
+        while streamIn.is_active():
+            op = listen(b'\x1b', priorize_esc_or_arrow=True)
+            if op == b'\x1b':
+                print('Esc received. Shutting down. ')
+                break
     except KeyboardInterrupt:
         print('Ctrl+C received. Shutting down. ')
     finally:
         print('Releasing resources... ')
         terminate_flag = 1
+        if not DEBUG_NO_MIDI:
+            midiPort.close()
         terminateLock.acquire()
         terminateLock.release()
         streamOutContainer[0].stop_stream()
@@ -152,15 +154,15 @@ def onAudioIn(in_data, sample_count, *_):
         envelope = getEnvelope(page, PAGE_LEN)
 
         profiler.gonna('crit_sec')
-        with notesLock:
-            if DEBUG_NO_MIDI:
-                # notes = [48, 52, 55]
-                notes = [55]
-            freqs = [pitch2freq(n) for n in notes]
+        if DEBUG_NO_MIDI:
+            freqs = [300]
+        else:
+            with notesLock:
+                freqs = [pitch2freq(n) for n in notes]
 
         profiler.gonna('interp')
+        harmonics = []
         if freqs:
-            harmonics = []
             for f0 in freqs:
                 for fn in LADDER * f0:
                     if fn >= NYQUIST:
