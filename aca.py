@@ -64,10 +64,6 @@ if DO_PROFILE:
         _print()
         _print(*a, **k)
 
-def sft(signal, freq_bin):
-    # Slow Fourier Transform
-    return np.abs(np.sum(signal * np.exp(IMAGINARY_LADDER * freq_bin))) / PAGE_LEN
-
 def main():
     global terminate_flag, f, hySynth
     terminateLock.acquire()
