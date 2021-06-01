@@ -28,12 +28,14 @@ Spectral leakage: just sum the neiboring freq bins?
     results:
         yup it works perfectly
 
-TODO
-
 "with a periodic signal for voiced sounds and white noise for unvoiced sounds. "
     - Ning Hu
     YinYin! Take out the harmonics. Use the rest to synth the envloped noise. 
     test this in jupyter notebook with a pre-recorded "mouthhh fffrequencccccy"
+    x sh f s th ts ch ha wu
+    WHAT A SUCCESS
+
+TODO
 
 implement vibrato?
     no?

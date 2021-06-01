@@ -6,6 +6,8 @@ from numpy.fft import rfft
 import scipy
 from scipy.interpolate import interp1d
 from threading import Lock
+from scipy.stats import norm
+from scipy.signal import butter, sosfiltfilt
 import wave
 import mido
 try:
@@ -22,10 +24,11 @@ except ImportError as e:
     raise e
 
 print('Preparing...')
+BUTTER_ORDER = 1
 DEBUG_NO_MIDI = False
 PAGE_LEN = 512
 N_HARMONICS = 50    # NYQUIST / 200
-HYBRID_QUALITY = 12
+HYBRID_QUALITY = 30
 DO_PROFILE = True
 # WRITE_FILE = None
 WRITE_FILE = f'demo_{time()}.wav'
@@ -38,20 +41,26 @@ DTYPE_IO = (np.int32, pyaudio.paInt32)
 TWO_PI = np.pi * 2
 HANN = scipy.signal.get_window('hann', PAGE_LEN, True)
 SILENCE = np.zeros((PAGE_LEN, ))
-PAGE_TIME = 1 / SR * PAGE_LEN
 IMAGINARY_LADDER = np.linspace(0, TWO_PI * 1j, PAGE_LEN)
 LADDER = np.arange(1, N_HARMONICS + 1)
 FMAX = 1600
+FMIN = 120
 INT32RANGE = 2**31
 INV_INT32RANGE = 1 / 2**31
 NOTE_ON = 'note_on'
 NOTE_OFF = 'note_off'
-SR_OVER_PAGE_LEN = SR / PAGE_LEN
+PAGE_LEN_OVER_SR = PAGE_LEN / SR
+PAGE_TIME = PAGE_LEN_OVER_SR
+SOS = butter(
+    BUTTER_ORDER, 2000000 / SR / PAGE_LEN, btype='low', 
+    output='sos', 
+)
+SPECTRUM_SIZE = PAGE_LEN // 2 + 1
 
 streamOutContainer = []
 terminate_flag = 0
 terminateLock = Lock()
-profiler = StreamProfiler(PAGE_LEN / SR, DO_PROFILE)
+profiler = StreamProfiler(PAGE_LEN_OVER_SR, DO_PROFILE)
 notes = []
 notes_changed = True
 notesLock = Lock()
@@ -119,18 +128,19 @@ def main():
         pa.terminate()
         print('Resources released. ')
 
-def getEnvelope(signal, len_signal):
-    f0 = yin(signal, SR, len_signal, fmax=FMAX)
+def getEnvelope(signal, len_signal, spectrum):
+    f0 = yin(signal, SR, len_signal, fmin=FMIN, fmax=FMAX)
     harmonics_f = np.arange(0, NYQUIST, f0)
     harmonics_a = np.zeros((harmonics_f.size, ))
-    spectrum_2 = np.square(np.abs(rfft(signal * HANN)))
-    SR_OVER_PAGE_LEN_OVER_f0 = SR_OVER_PAGE_LEN / f0
-    for i, energy_2 in enumerate(spectrum_2):
-        n = round(i * SR_OVER_PAGE_LEN_OVER_f0)
-        if n >= harmonics_f.size:
+    spectrum_2 = np.square(spectrum)
+    for n, fn in enumerate(harmonics_f):
+        mid_f_bin = round(fn * PAGE_LEN_OVER_SR)
+        if mid_f_bin + 2 >= SPECTRUM_SIZE:
             break
-        harmonics_a[n] += energy_2
-    harmonics_a = np.sqrt(harmonics_a) / PAGE_LEN
+        for f_bin in range(mid_f_bin - 2, mid_f_bin + 3):
+            harmonics_a[n] += spectrum_2[f_bin]
+            spectrum[n] = 0
+    harmonics_a = np.sqrt(harmonics_a)
     harmonics_a[0] = harmonics_a[1]
     f = interp1d(harmonics_f, harmonics_a)
     # max_f = harmonics_f[-1]
@@ -162,8 +172,11 @@ def onAudioIn(in_data, sample_count, *_):
         )
         page = np.multiply(page, INV_INT32RANGE, dtype=DTYPE_BUF)
 
+        profiler.gonna('rfft')
+        spectrum = np.abs(rfft(page * HANN)) / PAGE_LEN
+
         profiler.gonna('getE')
-        envelope = getEnvelope(page, PAGE_LEN)
+        envelope = getEnvelope(page, PAGE_LEN, spectrum)
 
         profiler.gonna('note_in')
         if DEBUG_NO_MIDI:
@@ -191,8 +204,17 @@ def onAudioIn(in_data, sample_count, *_):
         for harmonic in harmonics:
             harmonic.mag = envelope(harmonic.freq)
         
+        profiler.gonna('noise')
+        unvoiced_envelope = sosfiltfilt(SOS, spectrum)
+        random_spectrum = norm.rvs(0, 1, SPECTRUM_SIZE) + norm.rvs(
+            0, 1j, SPECTRUM_SIZE
+        )
+        unvoiced_spectrum = random_spectrum * unvoiced_envelope
+
         profiler.gonna('eat')
-        hySynth.eat(harmonics, skipSort=True)
+        hySynth.eat(
+            harmonics, unvoiced_spectrum*0, skipSort=True, 
+        )
 
         profiler.gonna('mix')
         if notes:
