@@ -24,6 +24,7 @@ except ImportError as e:
     raise e
 
 print('Preparing...')
+UNVOICE_USING_NOISE = True
 BUTTER_ORDER = 1
 DEBUG_NO_MIDI = False
 PAGE_LEN = 512
@@ -173,7 +174,8 @@ def onAudioIn(in_data, sample_count, *_):
         page = np.multiply(page, INV_INT32RANGE, dtype=DTYPE_BUF)
 
         profiler.gonna('rfft')
-        spectrum = np.abs(rfft(page * HANN)) / PAGE_LEN
+        spectrum_complex = rfft(page * HANN) / PAGE_LEN
+        spectrum = np.abs(spectrum_complex)
 
         profiler.gonna('getE')
         envelope = getEnvelope(page, PAGE_LEN, spectrum)
@@ -204,16 +206,19 @@ def onAudioIn(in_data, sample_count, *_):
         for harmonic in harmonics:
             harmonic.mag = envelope(harmonic.freq)
         
-        profiler.gonna('noise')
-        unvoiced_envelope = sosfiltfilt(SOS, spectrum)
-        random_spectrum = norm.rvs(0, 1, SPECTRUM_SIZE) + norm.rvs(
-            0, 1j, SPECTRUM_SIZE
-        )
-        unvoiced_spectrum = random_spectrum * unvoiced_envelope
+        profiler.gonna('unvoic')
+        if UNVOICE_USING_NOISE:
+            unvoiced_envelope = sosfiltfilt(SOS, spectrum)
+            random_spectrum = norm.rvs(0, 1, SPECTRUM_SIZE) + norm.rvs(
+                0, 1j, SPECTRUM_SIZE
+            )
+            unvoiced_spectrum = random_spectrum * unvoiced_envelope
+        else:
+            unvoiced_spectrum = spectrum_complex
 
         profiler.gonna('eat')
         hySynth.eat(
-            harmonics, unvoiced_spectrum*0, skipSort=True, 
+            harmonics, unvoiced_spectrum, skipSort=True, 
         )
 
         profiler.gonna('mix')
