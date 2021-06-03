@@ -24,9 +24,9 @@ except ImportError as e:
     raise e
 
 print('Preparing...')
-UNVOICE_USING_NOISE = True
+UNVOICE_USING_NOISE = False
 BUTTER_ORDER = 1
-DEBUG_NO_MIDI = False
+DEBUG_NO_MIDI = True
 PAGE_LEN = 512
 N_HARMONICS = 50    # NYQUIST / 200
 HYBRID_QUALITY = 30
@@ -129,7 +129,7 @@ def main():
         pa.terminate()
         print('Resources released. ')
 
-def getEnvelope(signal, len_signal, spectrum):
+def getEnvelope(signal, len_signal, spectrum, spectrum_complex):
     f0 = yin(signal, SR, len_signal, fmin=FMIN, fmax=FMAX)
     harmonics_f = np.arange(0, NYQUIST, f0)
     harmonics_a = np.zeros((harmonics_f.size, ))
@@ -138,9 +138,19 @@ def getEnvelope(signal, len_signal, spectrum):
         mid_f_bin = round(fn * PAGE_LEN_OVER_SR)
         if mid_f_bin + 2 >= SPECTRUM_SIZE:
             break
-        for f_bin in range(mid_f_bin - 2, mid_f_bin + 3):
-            harmonics_a[n] += spectrum_2[f_bin]
-            spectrum[n] = 0
+        harmonics_a[n] += spectrum_2[mid_f_bin - 2]
+        harmonics_a[n] += spectrum_2[mid_f_bin - 1]
+        harmonics_a[n] += spectrum_2[mid_f_bin]
+        harmonics_a[n] += spectrum_2[mid_f_bin + 1]
+        harmonics_a[n] += spectrum_2[mid_f_bin + 2]
+        spectrum[mid_f_bin - 1] = spectrum[mid_f_bin - 2]
+        spectrum[mid_f_bin    ] = spectrum[mid_f_bin - 3]
+        spectrum[mid_f_bin + 1] = spectrum[mid_f_bin - 4]
+        spectrum_complex[mid_f_bin - 1] = 0
+        spectrum_complex[mid_f_bin] = 0
+        spectrum_complex[mid_f_bin + 1] = 0
+        # spectrum_complex[mid_f_bin + 2] = 0
+        # spectrum_complex[mid_f_bin - 2] = 0
     harmonics_a = np.sqrt(harmonics_a)
     harmonics_a[0] = harmonics_a[1]
     f = interp1d(harmonics_f, harmonics_a)
@@ -178,7 +188,9 @@ def onAudioIn(in_data, sample_count, *_):
         spectrum = np.abs(spectrum_complex)
 
         profiler.gonna('getE')
-        envelope = getEnvelope(page, PAGE_LEN, spectrum)
+        envelope = getEnvelope(
+            page, PAGE_LEN, spectrum, spectrum_complex, 
+        )
 
         profiler.gonna('note_in')
         if DEBUG_NO_MIDI:
@@ -209,21 +221,22 @@ def onAudioIn(in_data, sample_count, *_):
         profiler.gonna('unvoic')
         if UNVOICE_USING_NOISE:
             unvoiced_envelope = sosfiltfilt(SOS, spectrum)
-            random_spectrum = norm.rvs(0, 1, SPECTRUM_SIZE) + norm.rvs(
-                0, 1j, SPECTRUM_SIZE
-            )
+            random_spectrum = norm.rvs(
+                0, 1, SPECTRUM_SIZE, 
+            ) + norm.rvs(0, 1j, SPECTRUM_SIZE)
             unvoiced_spectrum = random_spectrum * unvoiced_envelope
         else:
             unvoiced_spectrum = spectrum_complex
 
         profiler.gonna('eat')
         hySynth.eat(
-            harmonics, unvoiced_spectrum, skipSort=True, 
+            harmonics, unvoiced_spectrum*0, skipSort=True, 
         )
 
         profiler.gonna('mix')
         if notes:
             mixed = hySynth.mix()
+            # mixed = np.fft.irfft(unvoiced_spectrum) * PAGE_LEN * 2
         else:
             mixed = page
         mixed = np.round(
