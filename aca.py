@@ -26,7 +26,7 @@ except ImportError as e:
 print('Preparing...')
 UNVOICE_USING_NOISE = False
 BUTTER_ORDER = 1
-DEBUG_NO_MIDI = True
+DEBUG_NO_MIDI = False
 PAGE_LEN = 512
 N_HARMONICS = 50    # NYQUIST / 200
 HYBRID_QUALITY = 30
@@ -230,7 +230,7 @@ def onAudioIn(in_data, sample_count, *_):
 
         profiler.gonna('eat')
         hySynth.eat(
-            harmonics, unvoiced_spectrum*0, skipSort=True, 
+            harmonics, unvoiced_spectrum, skipSort=True, 
         )
 
         profiler.gonna('mix')
