@@ -29,7 +29,7 @@ BUTTER_ORDER = 1
 DEBUG_NO_MIDI = False
 PAGE_LEN = 512
 N_HARMONICS = 50    # NYQUIST / 200
-HYBRID_QUALITY = 30
+HYBRID_QUALITY = 60
 DO_PROFILE = True
 # WRITE_FILE = None
 WRITE_FILE = f'demo_{time()}.wav'
@@ -62,17 +62,24 @@ streamOutContainer = []
 terminate_flag = 0
 terminateLock = Lock()
 profiler = StreamProfiler(PAGE_LEN_OVER_SR, DO_PROFILE)
-notes = []
+notes = {}
 notes_changed = True
 notesLock = Lock()
 hySynth = None
-harmonics = []
+ampedHarmonics = []
 
 if DO_PROFILE:
     _print = print
     def print(*a, **k):
         _print()
         _print(*a, **k)
+
+class AmpedHarmonic(Harmonic):
+    __slot__ = ['freq', 'mag', 'amp']
+
+    def __init__(self, freq, mag, amp):
+        super().__init__(freq, mag)
+        self.amp = amp
 
 def main():
     global terminate_flag, f, hySynth
@@ -196,27 +203,27 @@ def onAudioIn(in_data, sample_count, *_):
         if DEBUG_NO_MIDI:
             if not notes:
                 notes_changed = True
-                notes.append(53)
+                notes[53] = 80
         notesLock.acquire()
         if notes_changed:
-            freqs = [pitch2freq(n) for n in notes]
-            notes_changed = False
-            notesLock.release()
-            harmonics.clear()
-            for f0 in freqs:
+            ampedHarmonics.clear()
+            for pitch, amp in notes.items():
+                f0 = pitch2freq(pitch)
                 for fn in LADDER * f0:
                     if fn >= NYQUIST:
                         break
-                    harmonics.append(
-                        Harmonic(fn, 0)
+                    ampedHarmonics.append(
+                        AmpedHarmonic(fn, 0, amp)
                     )
-            harmonics.sort(key=Harmonic.getFreq)
+            notes_changed = False
+            notesLock.release()
+            ampedHarmonics.sort(key=AmpedHarmonic.getFreq)
         else:
             notesLock.release()
 
         profiler.gonna('interp')
-        for harmonic in harmonics:
-            harmonic.mag = envelope(harmonic.freq)
+        for aH in ampedHarmonics:
+            aH.mag = envelope(aH.freq) * aH.amp
         
         profiler.gonna('unvoic')
         if UNVOICE_USING_NOISE:
@@ -230,7 +237,7 @@ def onAudioIn(in_data, sample_count, *_):
 
         profiler.gonna('eat')
         hySynth.eat(
-            harmonics, unvoiced_spectrum, skipSort=True, 
+            ampedHarmonics, unvoiced_spectrum, skipSort=True, 
         )
 
         profiler.gonna('mix')
@@ -262,10 +269,10 @@ def onMidiIn(msg):
     global notes_changed
     with notesLock:
         if msg.type == NOTE_ON:
-            assert msg.note not in notes
-            notes.append(msg.note)
+            notes[msg.note] = (msg.velocity ** 2) * .0001
         elif msg.type == NOTE_OFF:
-            notes.remove(msg.note)
+            if msg.note in notes:
+                notes.pop(msg.note)
         notes_changed = True
 
 main()

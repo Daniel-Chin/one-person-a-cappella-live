@@ -35,10 +35,11 @@ Spectral leakage: just sum the neiboring freq bins?
     x sh f s th ts ch ha wu
     WHAT A SUCCESS
 
+Key velocity! 
+    Dannenberg, R. B. (2006, November). The interpretation of MIDI velocity. In ICMC.
+
 TODO
 
 implement vibrato?
-    no?
-    yes! 
-
-Key velocity! 
+    - slow approach to a new note? 
+    - perlin noise to add FM variations? 
