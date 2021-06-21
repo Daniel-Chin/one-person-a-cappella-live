@@ -24,7 +24,9 @@ except ImportError as e:
     raise e
 
 print('Preparing...')
-UNVOICE_USING_NOISE = False
+USE_KEY_VELOCITY = False
+UNVOICE_USING_NOISE = True
+HAS_UNPITCHED = False
 BUTTER_ORDER = 1
 DEBUG_NO_MIDI = False
 PAGE_LEN = 512
@@ -226,14 +228,17 @@ def onAudioIn(in_data, sample_count, *_):
             aH.mag = envelope(aH.freq) * aH.amp
         
         profiler.gonna('unvoic')
-        if UNVOICE_USING_NOISE:
-            unvoiced_envelope = sosfiltfilt(SOS, spectrum)
-            random_spectrum = norm.rvs(
-                0, 1, SPECTRUM_SIZE, 
-            ) + norm.rvs(0, 1j, SPECTRUM_SIZE)
-            unvoiced_spectrum = random_spectrum * unvoiced_envelope
+        if HAS_UNPITCHED:
+            if UNVOICE_USING_NOISE:
+                unvoiced_envelope = sosfiltfilt(SOS, spectrum)
+                random_spectrum = norm.rvs(
+                    0, 1, SPECTRUM_SIZE, 
+                ) + norm.rvs(0, 1j, SPECTRUM_SIZE)
+                unvoiced_spectrum = random_spectrum * unvoiced_envelope
+            else:
+                unvoiced_spectrum = spectrum_complex
         else:
-            unvoiced_spectrum = spectrum_complex
+            unvoiced_spectrum = None
 
         profiler.gonna('eat')
         hySynth.eat(
@@ -269,7 +274,10 @@ def onMidiIn(msg):
     global notes_changed
     with notesLock:
         if msg.type == NOTE_ON:
-            notes[msg.note] = (msg.velocity ** 2) * .0001
+            if USE_KEY_VELOCITY:
+                notes[msg.note] = (msg.velocity ** 2) * .0001
+            else:
+                notes[msg.note] = .5
         elif msg.type == NOTE_OFF:
             if msg.note in notes:
                 notes.pop(msg.note)
