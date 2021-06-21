@@ -43,3 +43,12 @@ TODO
 implement vibrato?
     - slow approach to a new note? 
     - perlin noise to add FM variations? 
+
+Gus: 
+    被动变色 (变色龙) 主动变色 (取色笔)
+
+related work
+    Aeolis: A Virtual Instrument Producing Pitched Tones With Soundscape Timbres
+
+Mystery:
+    When C3 is sang, how do people hear C4? 
