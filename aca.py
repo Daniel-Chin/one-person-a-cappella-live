@@ -299,12 +299,12 @@ class MidiHandler:
     def handleMessage(self, msg):
         if msg.type == NOTE_ON:
             if USE_KEY_VELOCITY:
-                self.notes[msg.note] = (msg.velocity ** 2) * .0001
+                self._notes[msg.note] = (msg.velocity ** 2) * .0001
             else:
-                self.notes[msg.note] = .5
+                self._notes[msg.note] = .5
         elif msg.type == NOTE_OFF:
             if msg.note in self.notes:
-                self.notes.pop(msg.note)
+                self._notes.pop(msg.note)
         elif msg.type == CONTROL_CHANGE:
             if msg.channel != 0:
                 return
@@ -313,6 +313,7 @@ class MidiHandler:
                 if time() >= self.freeze_until:
                     print('freeze!')
                     self.notes = self._notes.copy()
+                    print(self.notes)
                     self.freeze_until = time() + FREEZE_COOLDOWN
                 else:
                     print('thru!')
