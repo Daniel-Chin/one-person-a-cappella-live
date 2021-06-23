@@ -24,12 +24,13 @@ except ImportError as e:
     raise e
 
 print('Preparing...')
+KEY_DELAY = .1
 USE_KEY_VELOCITY = False
 UNVOICE_USING_NOISE = True
-HAS_UNPITCHED = False
+HAS_UNPITCHED = True
 BUTTER_ORDER = 1
 DEBUG_NO_MIDI = False
-PAGE_LEN = 512
+PAGE_LEN = 768
 N_HARMONICS = 50    # NYQUIST / 200
 HYBRID_QUALITY = 60
 DO_PROFILE = True
@@ -38,6 +39,7 @@ WRITE_FILE = f'demo_{time()}.wav'
 
 MASTER_VOLUME = .2
 SR = 22050
+HYBRID_VERBOSE = False
 NYQUIST = SR // 2
 DTYPE_BUF = np.float32
 DTYPE_IO = (np.int32, pyaudio.paInt32)
@@ -65,10 +67,9 @@ terminate_flag = 0
 terminateLock = Lock()
 profiler = StreamProfiler(PAGE_LEN_OVER_SR, DO_PROFILE)
 notes = {}
-notes_changed = True
-notesLock = Lock()
 hySynth = None
 ampedHarmonics = []
+midiHandler = None
 
 if DO_PROFILE:
     _print = print
@@ -84,7 +85,7 @@ class AmpedHarmonic(Harmonic):
         self.amp = amp
 
 def main():
-    global terminate_flag, f, hySynth
+    global terminate_flag, f, hySynth, midiHandler
     terminateLock.acquire()
     hySynth = HybridSynth(
         HYBRID_QUALITY, SR, PAGE_LEN, DTYPE_BUF, 
@@ -111,7 +112,10 @@ def main():
     streamIn.start_stream()
     print('Press ESC to quit. ')
     if not DEBUG_NO_MIDI:
-        midiPort = mido.open_input(callback = onMidiIn)
+        midiHandler = MidiHandler()
+        midiPort = mido.open_input(
+            callback = midiHandler.onMidiIn, 
+        )
     try:
         while streamIn.is_active():
             op = listen(b'\x1b', priorize_esc_or_arrow=True)
@@ -174,7 +178,6 @@ def getEnvelope(signal, len_signal, spectrum, spectrum_complex):
     return envelope
 
 def onAudioIn(in_data, sample_count, *_):
-    global notes_changed
     try:
         if terminate_flag == 1:
             terminateLock.release()
@@ -191,6 +194,7 @@ def onAudioIn(in_data, sample_count, *_):
             in_data, dtype = DTYPE_IO[0]
         )
         page = np.multiply(page, INV_INT32RANGE, dtype=DTYPE_BUF)
+        midiHandler.delayKeys()
 
         profiler.gonna('rfft')
         spectrum_complex = rfft(page * HANN) / PAGE_LEN
@@ -204,10 +208,9 @@ def onAudioIn(in_data, sample_count, *_):
         profiler.gonna('note_in')
         if DEBUG_NO_MIDI:
             if not notes:
-                notes_changed = True
-                notes[53] = 80
-        notesLock.acquire()
-        if notes_changed:
+                midiHandler.notes_changed = True
+                notes[53] = .5
+        if midiHandler.notes_changed:
             ampedHarmonics.clear()
             for pitch, amp in notes.items():
                 f0 = pitch2freq(pitch)
@@ -217,18 +220,15 @@ def onAudioIn(in_data, sample_count, *_):
                     ampedHarmonics.append(
                         AmpedHarmonic(fn, 0, amp)
                     )
-            notes_changed = False
-            notesLock.release()
+            midiHandler.notes_changed = False
             ampedHarmonics.sort(key=AmpedHarmonic.getFreq)
-        else:
-            notesLock.release()
 
         profiler.gonna('interp')
         for aH in ampedHarmonics:
             aH.mag = envelope(aH.freq) * aH.amp
         
-        profiler.gonna('unvoic')
         if HAS_UNPITCHED:
+            profiler.gonna('unvoic')
             if UNVOICE_USING_NOISE:
                 unvoiced_envelope = sosfiltfilt(SOS, spectrum)
                 random_spectrum = norm.rvs(
@@ -242,13 +242,14 @@ def onAudioIn(in_data, sample_count, *_):
 
         profiler.gonna('eat')
         hySynth.eat(
-            ampedHarmonics, unvoiced_spectrum, skipSort=True, 
+            ampedHarmonics, unvoiced_spectrum * .3, 
+            skipSort=True, verbose=HYBRID_VERBOSE
+            # [], unvoiced_spectrum, skipSort=True, 
         )
 
         profiler.gonna('mix')
         if notes:
             mixed = hySynth.mix()
-            # mixed = np.fft.irfft(unvoiced_spectrum) * PAGE_LEN * 2
         else:
             mixed = page
         mixed = np.round(
@@ -270,9 +271,28 @@ def onAudioIn(in_data, sample_count, *_):
 def pitch2freq(pitch):
     return np.exp((pitch + 36.37631656229591) * 0.0577622650466621)
 
-def onMidiIn(msg):
-    global notes_changed
-    with notesLock:
+class MidiHandler:
+    def __init__(self):
+        self.midiQueueLock = Lock()
+        self.midiDelayQueue = []
+        self.notes_changed = True
+    
+    def onMidiIn(self, msg):
+        with self.midiQueueLock:
+            self.midiDelayQueue.append(
+                (msg, time() + KEY_DELAY)
+            )
+
+    def delayKeys(self):
+        while self.midiDelayQueue:
+            with self.midiQueueLock:
+                msg, sched_time = self.midiDelayQueue[0]
+                if sched_time > time():
+                    return
+                self.midiDelayQueue.pop(0)
+            self.handleMessage(msg)
+
+    def handleMessage(self, msg):
         if msg.type == NOTE_ON:
             if USE_KEY_VELOCITY:
                 notes[msg.note] = (msg.velocity ** 2) * .0001
@@ -281,6 +301,6 @@ def onMidiIn(msg):
         elif msg.type == NOTE_OFF:
             if msg.note in notes:
                 notes.pop(msg.note)
-        notes_changed = True
+        self.notes_changed = True
 
 main()
