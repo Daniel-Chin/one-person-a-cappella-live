@@ -24,6 +24,7 @@ except ImportError as e:
     raise e
 
 print('Preparing...')
+FREEZE_COOLDOWN = 25
 KEY_DELAY = .1
 USE_KEY_VELOCITY = False
 UNVOICE_USING_NOISE = True
@@ -54,6 +55,7 @@ INT32RANGE = 2**31
 INV_INT32RANGE = 1 / 2**31
 NOTE_ON = 'note_on'
 NOTE_OFF = 'note_off'
+CONTROL_CHANGE = 'control_change'
 PAGE_LEN_OVER_SR = PAGE_LEN / SR
 PAGE_TIME = PAGE_LEN_OVER_SR
 SOS = butter(
@@ -66,7 +68,6 @@ streamOutContainer = []
 terminate_flag = 0
 terminateLock = Lock()
 profiler = StreamProfiler(PAGE_LEN_OVER_SR, DO_PROFILE)
-notes = {}
 hySynth = None
 ampedHarmonics = []
 midiHandler = None
@@ -207,12 +208,12 @@ def onAudioIn(in_data, sample_count, *_):
 
         profiler.gonna('note_in')
         if DEBUG_NO_MIDI:
-            if not notes:
+            if not midiHandler.notes:
                 midiHandler.notes_changed = True
-                notes[53] = .5
+                midiHandler.notes[53] = .5
         if midiHandler.notes_changed:
             ampedHarmonics.clear()
-            for pitch, amp in notes.items():
+            for pitch, amp in midiHandler.notes.items():
                 f0 = pitch2freq(pitch)
                 for fn in LADDER * f0:
                     if fn >= NYQUIST:
@@ -248,7 +249,7 @@ def onAudioIn(in_data, sample_count, *_):
         )
 
         profiler.gonna('mix')
-        if notes:
+        if midiHandler.notes:
             mixed = hySynth.mix()
         else:
             mixed = page
@@ -276,6 +277,9 @@ class MidiHandler:
         self.midiQueueLock = Lock()
         self.midiDelayQueue = []
         self.notes_changed = True
+        self._notes = {}        # internal true notes
+        self.notes = self._notes    # external, can be frozen
+        self.freeze_until = 0
     
     def onMidiIn(self, msg):
         with self.midiQueueLock:
@@ -295,12 +299,30 @@ class MidiHandler:
     def handleMessage(self, msg):
         if msg.type == NOTE_ON:
             if USE_KEY_VELOCITY:
-                notes[msg.note] = (msg.velocity ** 2) * .0001
+                self.notes[msg.note] = (msg.velocity ** 2) * .0001
             else:
-                notes[msg.note] = .5
+                self.notes[msg.note] = .5
         elif msg.type == NOTE_OFF:
-            if msg.note in notes:
-                notes.pop(msg.note)
+            if msg.note in self.notes:
+                self.notes.pop(msg.note)
+        elif msg.type == CONTROL_CHANGE:
+            if msg.channel != 0:
+                return
+            if msg.value == 127:
+                # press down
+                if time() >= self.freeze_until:
+                    print('freeze!')
+                    self.notes = self._notes.copy()
+                    self.freeze_until = time() + FREEZE_COOLDOWN
+                else:
+                    print('thru!')
+                    self.notes = {}
+            else:
+                # release
+                if time() >= self.freeze_until:
+                    print('should not happen. 352786231')
+                else:
+                    self.notes = self._notes
         self.notes_changed = True
 
 main()
