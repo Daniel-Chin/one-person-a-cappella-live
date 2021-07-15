@@ -6,7 +6,7 @@ from numpy.fft import rfft
 import scipy
 from scipy.interpolate import interp1d
 from threading import Lock
-from scipy.stats import norm
+from scipy.stats import uniform
 from scipy.signal import butter, sosfiltfilt
 import wave
 import mido
@@ -232,9 +232,9 @@ def onAudioIn(in_data, sample_count, *_):
             profiler.gonna('unvoic')
             if UNVOICE_USING_NOISE:
                 unvoiced_envelope = sosfiltfilt(SOS, spectrum)
-                random_spectrum = norm.rvs(
-                    0, 1, SPECTRUM_SIZE, 
-                ) + norm.rvs(0, 1j, SPECTRUM_SIZE)
+                random_spectrum = np.exp(uniform.rvs(
+                    0, 2j * np.pi, SPECTRUM_SIZE, 
+                ))
                 unvoiced_spectrum = random_spectrum * unvoiced_envelope
             else:
                 unvoiced_spectrum = spectrum_complex
