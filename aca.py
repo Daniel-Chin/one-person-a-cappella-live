@@ -38,6 +38,7 @@ HYBRID_QUALITY = 60
 DO_PROFILE = True
 # WRITE_FILE = None
 WRITE_FILE = f'demo_{time()}.wav'
+WRITE_RAW_FILE = f'dem_raw_{time()}.wav'
 
 MASTER_VOLUME = .2
 SR = 22050
@@ -87,7 +88,7 @@ class AmpedHarmonic(Harmonic):
         self.amp = amp
 
 def main():
-    global terminate_flag, f, hySynth, midiHandler
+    global terminate_flag, f, hySynth, midiHandler, fRaw
     terminateLock.acquire()
     hySynth = HybridSynth(
         HYBRID_QUALITY, SR, PAGE_LEN, DTYPE_BUF, 
@@ -105,6 +106,11 @@ def main():
         f.setnchannels(1)
         f.setsampwidth(4)   # 32 / 8 = 4
         f.setframerate(SR)
+    if WRITE_RAW_FILE is not None:
+        fRaw = wave.open(WRITE_RAW_FILE, 'wb')
+        fRaw.setnchannels(1)
+        fRaw.setsampwidth(4)   # 32 / 8 = 4
+        fRaw.setframerate(SR)
     streamIn = pa.open(
         format = DTYPE_IO[1], channels = 1, rate = SR, 
         input = True, frames_per_buffer = PAGE_LEN,
@@ -137,6 +143,8 @@ def main():
         streamOutContainer[0].close()
         if WRITE_FILE is not None:
             f.close()
+        if WRITE_RAW_FILE is not None:
+            fRaw.close()
         while streamIn.is_active():
             sleep(.1)   # not perfect
         streamIn.stop_stream()
@@ -260,6 +268,8 @@ def onAudioIn(in_data, sample_count, *_):
         streamOutContainer[0].write(mixed, PAGE_LEN)
         if WRITE_FILE is not None:
             f.writeframes(mixed)
+        if WRITE_RAW_FILE is not None:
+            fRaw.writeframes(page)
 
         profiler.display(same_line=False)
         profiler.gonna('idle')
