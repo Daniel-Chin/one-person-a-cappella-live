@@ -113,8 +113,8 @@ def main():
     )
     streamIn.start_stream()
     print('Press ESC to quit. ')
+    midiHandler = MidiHandler()
     if not DEBUG_NO_MIDI:
-        midiHandler = MidiHandler()
         midiPort = mido.open_input(
             callback = midiHandler.onMidiIn, 
         )
@@ -211,7 +211,7 @@ def onAudioIn(in_data, sample_count, *_):
         if DEBUG_NO_MIDI:
             if not midiHandler.notes:
                 midiHandler.notes_changed = True
-                midiHandler.notes[53] = .5
+                # midiHandler.notes[53] = .5
         if midiHandler.notes_changed:
             ampedHarmonics.clear()
             for pitch, amp in midiHandler.notes.items():
@@ -304,7 +304,7 @@ class MidiHandler:
             else:
                 self._notes[msg.note] = .5
         elif msg.type == NOTE_OFF:
-            if msg.note in self.notes:
+            if msg.note in self._notes:
                 self._notes.pop(msg.note)
         elif msg.type == CONTROL_CHANGE:
             if msg.channel != 0:
@@ -314,17 +314,18 @@ class MidiHandler:
                 if time() >= self.freeze_until:
                     print('freeze!')
                     self.notes = self._notes.copy()
-                    print(self.notes)
                     self.freeze_until = time() + FREEZE_COOLDOWN
                 else:
                     print('thru!')
                     self.notes = {}
-            else:
+            elif msg.value == 0:
                 # release
                 if time() >= self.freeze_until:
                     print('should not happen. 352786231')
                 else:
                     self.notes = self._notes
+            # else:
+                # print('Prolly refined pedal,', msg)
         self.notes_changed = True
 
 main()
