@@ -24,13 +24,14 @@ except ImportError as e:
     raise e
 
 print('Preparing...')
+DEBUG_NO_MIDI = False
+
 FREEZE_COOLDOWN = 25
 KEY_DELAY = .1
 USE_KEY_VELOCITY = False
 UNVOICE_USING_NOISE = True
 HAS_UNPITCHED = True
 BUTTER_ORDER = 1
-DEBUG_NO_MIDI = False
 PAGE_LEN = 768
 N_HARMONICS = 50    # NYQUIST / 200
 HYBRID_QUALITY = 60
