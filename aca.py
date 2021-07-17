@@ -269,7 +269,9 @@ def onAudioIn(in_data, sample_count, *_):
         if WRITE_FILE is not None:
             f.writeframes(mixed)
         if WRITE_RAW_FILE is not None:
-            fRaw.writeframes(page)
+            fRaw.writeframes(np.round(
+                page * INT32RANGE
+            ).astype(DTYPE_IO[0]))
 
         profiler.display(same_line=False)
         profiler.gonna('idle')
