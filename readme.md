@@ -1,4 +1,6 @@
 # One-person a cappella live ("OPAL")
+[./aca.py](./aca.py) is the source code.  
+
 Video explanation:  
 YouTube: https://youtu.be/uKA5eqZypM0  
 Bilibili: https://www.bilibili.com/video/BV1cf4y157ux/  
