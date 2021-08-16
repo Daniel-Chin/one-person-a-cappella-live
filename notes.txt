@@ -39,6 +39,7 @@ Key velocity!
     Dannenberg, R. B. (2006, November). The interpretation of MIDI velocity. In ICMC.
 
 TODO
+    delay between tracks? to make it rich and less robotic
 
 implement vibrato?
     - slow approach to a new note? 
