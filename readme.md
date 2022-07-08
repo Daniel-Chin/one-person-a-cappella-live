@@ -14,4 +14,5 @@ Bilibili: https://www.bilibili.com/video/BV1Xq4y1W7aL/
 
 ## How does it work? 
 What are some DSP details?  
+Watch video presentation: https://youtu.be/QOtcpMk6jT0  
 Download slides: [./demos/technicalDetails.pptx?raw=true](./demos/technicalDetails.pptx?raw=true)
